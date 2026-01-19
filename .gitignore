@@ -2,9 +2,22 @@ node_modules/
 *.log
 .DS_Store
 .env
+.env.*
+!.env.example
+.secrets/
+secrets/
+
+# Credentials / tokens
 tokens.json
 history.json
 client_secret_*.json
 *.crt
 *.pem
 *.p12
+*.key
+*.token
+
+# App data and local artifacts
+campaigns-local.json
+supabase-sync.log
+tmp/

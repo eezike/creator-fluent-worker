@@ -20,6 +20,9 @@ const oAuth2Client = new google.auth.OAuth2(
 // Scopes: read-only Gmail access (enough for our use case)
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
+/**
+ * Prompt the user in the terminal and resolve with their input.
+ */
 function askQuestion(query: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -34,6 +37,9 @@ function askQuestion(query: string): Promise<string> {
   );
 }
 
+/**
+ * Runs the OAuth flow and saves tokens to disk.
+ */
 async function main() {
   // 1) Generate auth URL
   const authUrl = oAuth2Client.generateAuthUrl({

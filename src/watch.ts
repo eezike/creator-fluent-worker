@@ -26,6 +26,9 @@ oAuth2Client.setCredentials(tokens);
 
 const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
 
+/**
+ * Register a Gmail watch to push INBOX changes to the configured Pub/Sub topic.
+ */
 async function main() {
   const topicName = `projects/${projectId}/topics/${topicId}`;
 

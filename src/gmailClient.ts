@@ -3,6 +3,9 @@ import fs from "node:fs";
 
 const TOKENS_PATH = "tokens.json";
 
+/**
+ * Creates an authenticated Gmail client using OAuth tokens from disk.
+ */
 export function createGmailClient() {
   const raw = fs.readFileSync(TOKENS_PATH, "utf-8");
   const tokens = JSON.parse(raw);

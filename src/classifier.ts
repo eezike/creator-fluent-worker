@@ -4,10 +4,10 @@ export type ParsedEmail = {
     snippet: string;
   };
   
-  export type Classification = {
-    isCampaign: boolean;
-    reason: string;
-  };
+export type Classification = {
+  isCampaign: boolean;
+  reason: string;
+};
   
   const CAMPAIGN_KEYWORDS = [
     "campaign",
@@ -23,8 +23,11 @@ export type ParsedEmail = {
     "creator partnership",
     "brand deal",
   ];
-  
-  export function classifyEmail(email: ParsedEmail): Classification {
+
+/**
+ * Quick keyword-based check to decide if an email is likely a campaign.
+ */
+export function classifyEmail(email: ParsedEmail): Classification {
     const text = `${email.subject} ${email.snippet}`.toLowerCase();
   
     for (const kw of CAMPAIGN_KEYWORDS) {

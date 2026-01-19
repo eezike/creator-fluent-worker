@@ -12,7 +12,8 @@
   "dependencies": {
     "@google-cloud/pubsub": "^5.2.0",
     "dotenv": "^17.2.3",
-    "googleapis": "^167.0.0"
+    "googleapis": "^167.0.0",
+    "openai": "^4.77.4"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
