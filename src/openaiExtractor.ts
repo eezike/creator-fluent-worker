@@ -185,7 +185,7 @@ export async function extractCampaignDetails(
 ): Promise<CampaignExtraction> {
   const prompt = buildPrompt(email);
 
-  const completion = await withRetry(
+  const completion = await withRetry<OpenAI.Chat.Completions.ChatCompletion>(
     () =>
       openai.chat.completions.create({
         model: OPENAI_MODEL,

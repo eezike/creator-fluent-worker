@@ -8,7 +8,8 @@ import { PaymentStatus, UrgencyLevel } from "./enums";
 function parseDisplayName(from: string) {
   const match = from.match(/^(.*)<.*>$/);
   if (match) {
-    return match[1].replace(/"/g, "").trim();
+    const name = match[1]?.replace(/"/g, "").trim();
+    if (name) return name;
   }
   const email = from.trim();
   if (email.includes("@")) {
@@ -38,8 +39,9 @@ function pickNextDeadline(dates: Array<string | null | undefined>) {
     .filter((value) => !Number.isNaN(value))
     .sort((a, b) => a - b);
   const upcoming = parsed.find((value) => value >= now);
-  if (!upcoming && parsed.length > 0) {
-    return new Date(parsed[0]).toISOString();
+  const earliest = parsed[0];
+  if (!upcoming && earliest !== undefined) {
+    return new Date(earliest).toISOString();
   }
   return upcoming ? new Date(upcoming).toISOString() : null;
 }
