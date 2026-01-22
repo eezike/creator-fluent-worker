@@ -71,13 +71,16 @@ export async function ensureWatchForConnection(
   const updatedConnection = await persistTokensIfChanged(
     supabase,
     connection,
-    oAuth2Client.credentials
+    oAuth2Client.credentials,
+    env.tokenEncryptionKey
   );
 
-  await updateConnection(supabase, updatedConnection.id, {
-    history_id: historyId.toString(),
-    watch_expiration: expiration,
-  });
+  await updateConnection(
+    supabase,
+    updatedConnection.id,
+    { history_id: historyId.toString(), watch_expiration: expiration },
+    env.tokenEncryptionKey
+  );
 
   return { ...updatedConnection, history_id: historyId.toString(), watch_expiration: expiration };
 }
@@ -86,7 +89,7 @@ export async function ensureWatchForConnection(
  * Refresh Gmail watches for every known connection.
  */
 export async function refreshAllWatches(supabase: SupabaseClient, env: EnvConfig) {
-  const connections = await fetchConnections(supabase);
+  const connections = await fetchConnections(supabase, env.tokenEncryptionKey);
   for (const connection of connections) {
     try {
       await ensureWatchForConnection(supabase, connection, env);

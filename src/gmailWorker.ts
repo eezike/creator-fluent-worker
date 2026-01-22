@@ -15,6 +15,7 @@ import { isRateLimitError, withRetry } from "./retry";
 
 const MAX_GMAIL_RETRIES = 5;
 const BASE_RETRY_DELAY_MS = 1000;
+const MAX_HISTORY_RESULTS = 100;
 
 /**
  * Detect Gmail history errors that require a watch reset.
@@ -33,7 +34,11 @@ export async function processGmailNotification(
   env: EnvConfig,
   payload: { emailAddress: string; historyId: string }
 ) {
-  const connection = await fetchConnectionByEmail(supabase, payload.emailAddress);
+  const connection = await fetchConnectionByEmail(
+    supabase,
+    payload.emailAddress,
+    env.tokenEncryptionKey
+  );
   if (!connection) {
     console.warn(`No Gmail connection found for ${payload.emailAddress}`);
     return;
@@ -56,6 +61,7 @@ export async function processGmailNotification(
           userId: "me",
           startHistoryId,
           historyTypes: ["messageAdded"],
+          maxResults: MAX_HISTORY_RESULTS,
         });
       } catch (err: any) {
         if (!isHistoryNotFoundError(err)) {
@@ -67,6 +73,7 @@ export async function processGmailNotification(
           userId: "me",
           startHistoryId: refreshed.history_id ?? payload.historyId,
           historyTypes: ["messageAdded"],
+          maxResults: MAX_HISTORY_RESULTS,
         });
       }
     },
@@ -160,10 +167,14 @@ export async function processGmailNotification(
   const updatedConnection = await persistTokensIfChanged(
     supabase,
     connection,
-    oAuth2Client.credentials
+    oAuth2Client.credentials,
+    env.tokenEncryptionKey
   );
 
-  await updateConnection(supabase, updatedConnection.id, {
-    history_id: latestHistoryId,
-  });
+  await updateConnection(
+    supabase,
+    updatedConnection.id,
+    { history_id: latestHistoryId },
+    env.tokenEncryptionKey
+  );
 }

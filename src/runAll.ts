@@ -45,11 +45,13 @@ async function startWorker(
     `Listening for messages on subscription: ${env.subscriptionId} (project ${env.projectId})`
   );
 
+  // Serialize message handling to avoid overlapping Gmail history reads.
   let processingQueue = Promise.resolve();
 
   subscription.on("message", (message) => {
     processingQueue = processingQueue
       .then(async () => {
+        // Pub/Sub payloads contain the Gmail emailAddress + historyId.
         const dataStr = message.data.toString("utf8");
         const payload = JSON.parse(dataStr) as {
           emailAddress: string;
@@ -72,6 +74,7 @@ async function startWorker(
     process.exit(1);
   });
 
+  // Refresh watches periodically so they don't expire (~7 days).
   setInterval(() => {
     refreshAllWatches(supabase, env).catch((err) => {
       console.error("Failed to refresh Gmail watches:", err);
@@ -83,6 +86,7 @@ async function startWorker(
  * Bootstrap environment config and start the background worker.
  */
 async function main() {
+  // Load env/config and confirm the service account identity.
   const env = getEnvConfig();
   const credentialsPath = resolveCredentialsPath(env.applicationCredentials);
   console.log("Using GOOGLE_APPLICATION_CREDENTIALS:", credentialsPath);
@@ -98,6 +102,7 @@ async function main() {
   console.log("Ensuring Gmail watches for existing connections");
   await refreshAllWatches(supabase, env);
 
+  // Initialize Pub/Sub and ensure the subscription exists before listening.
   const pubsub = new PubSub({
     projectId: env.projectId,
     keyFilename: credentialsPath,

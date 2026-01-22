@@ -11,6 +11,7 @@ export type EnvConfig = {
   applicationCredentials: string;
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
+  tokenEncryptionKey: string;
 };
 
 /**
@@ -26,6 +27,7 @@ export function getEnvConfig(): EnvConfig {
   const applicationCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS!;
   const supabaseUrl = process.env.SUPABASE_URL!;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const tokenEncryptionKey = process.env.GMAIL_TOKEN_ENCRYPTION_KEY!;
 
   const missing = [
     ["GCP_PROJECT_ID", projectId],
@@ -36,6 +38,7 @@ export function getEnvConfig(): EnvConfig {
     ["GOOGLE_APPLICATION_CREDENTIALS", applicationCredentials],
     ["SUPABASE_URL", supabaseUrl],
     ["SUPABASE_SERVICE_ROLE_KEY", supabaseServiceRoleKey],
+    ["GMAIL_TOKEN_ENCRYPTION_KEY", tokenEncryptionKey],
   ].filter(([, val]) => !val);
 
   if (missing.length) {
@@ -54,6 +57,7 @@ export function getEnvConfig(): EnvConfig {
     applicationCredentials,
     supabaseUrl,
     supabaseServiceRoleKey,
+    tokenEncryptionKey,
   };
 }
 

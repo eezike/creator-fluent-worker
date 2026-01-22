@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { decryptTokens, encryptTokens } from "./tokenCrypto";
 
 export type GmailTokens = Record<string, any>;
 
@@ -62,15 +63,17 @@ export function tokensChanged(existing: GmailTokens, next: GmailTokens): boolean
 export async function persistTokensIfChanged(
   supabase: SupabaseClient,
   connection: GmailConnection,
-  nextTokens: GmailTokens
+  nextTokens: GmailTokens,
+  encryptionKey: string
 ) {
   const merged = mergeTokens(connection.tokens, nextTokens);
   if (!tokensChanged(connection.tokens, merged)) {
     return connection;
   }
+  const encrypted = await encryptTokens(merged, encryptionKey);
   const { data, error } = await supabase
     .from("gmail_connections")
-    .update({ tokens: merged })
+    .update({ tokens: encrypted })
     .eq("id", connection.id)
     .select("*")
     .single();
@@ -78,20 +81,41 @@ export async function persistTokensIfChanged(
     console.warn("Failed to persist refreshed tokens:", error);
     return connection;
   }
-  return data as GmailConnection;
+  const decrypted = await decryptTokens<GmailTokens>(
+    (data as GmailConnection).tokens,
+    encryptionKey
+  );
+  return { ...(data as GmailConnection), tokens: decrypted.tokens };
 }
 
 /**
  * Fetch all Gmail connection records from Supabase.
  */
 export async function fetchConnections(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  encryptionKey: string
 ): Promise<GmailConnection[]> {
   const { data, error } = await supabase.from("gmail_connections").select("*");
   if (error) {
     throw new Error(`Failed to fetch gmail_connections: ${error.message}`);
   }
-  return (data ?? []) as GmailConnection[];
+  const connections = (data ?? []) as GmailConnection[];
+  return Promise.all(
+    connections.map(async (connection) => {
+      const decrypted = await decryptTokens<GmailTokens>(
+        connection.tokens,
+        encryptionKey
+      );
+      if (!decrypted.encrypted) {
+        const encrypted = await encryptTokens(decrypted.tokens, encryptionKey);
+        await supabase
+          .from("gmail_connections")
+          .update({ tokens: encrypted })
+          .eq("id", connection.id);
+      }
+      return { ...connection, tokens: decrypted.tokens };
+    })
+  );
 }
 
 /**
@@ -99,7 +123,8 @@ export async function fetchConnections(
  */
 export async function fetchConnectionByEmail(
   supabase: SupabaseClient,
-  email: string
+  email: string,
+  encryptionKey: string
 ): Promise<GmailConnection | null> {
   const { data, error } = await supabase
     .from("gmail_connections")
@@ -109,7 +134,19 @@ export async function fetchConnectionByEmail(
   if (error) {
     throw new Error(`Failed to fetch gmail_connections: ${error.message}`);
   }
-  return (data as GmailConnection) ?? null;
+  if (!data) return null;
+  const decrypted = await decryptTokens<GmailTokens>(
+    (data as GmailConnection).tokens,
+    encryptionKey
+  );
+  if (!decrypted.encrypted) {
+    const encrypted = await encryptTokens(decrypted.tokens, encryptionKey);
+    await supabase
+      .from("gmail_connections")
+      .update({ tokens: encrypted })
+      .eq("id", (data as GmailConnection).id);
+  }
+  return { ...(data as GmailConnection), tokens: decrypted.tokens };
 }
 
 /**
@@ -118,9 +155,20 @@ export async function fetchConnectionByEmail(
 export async function updateConnection(
   supabase: SupabaseClient,
   id: string,
-  updates: Partial<GmailConnection>
+  updates: Partial<GmailConnection>,
+  encryptionKey?: string
 ) {
-  const { error } = await supabase.from("gmail_connections").update(updates).eq("id", id);
+  const nextUpdates = { ...updates } as Partial<GmailConnection>;
+  if (updates.tokens && encryptionKey) {
+    nextUpdates.tokens = (await encryptTokens(
+      updates.tokens,
+      encryptionKey
+    )) as unknown as GmailTokens;
+  }
+  const { error } = await supabase
+    .from("gmail_connections")
+    .update(nextUpdates)
+    .eq("id", id);
   if (error) {
     throw new Error(`Failed to update gmail_connections: ${error.message}`);
   }
