@@ -1,21 +1,26 @@
 import { google } from "googleapis";
 import { SupabaseClient } from "@supabase/supabase-js";
-import { classifyEmail, ParsedEmail } from "./classifier";
-import { extractPlainText } from "./gmailParser";
-import { CampaignContext, extractCampaignDetails } from "./openaiExtractor";
-import { upsertDealFromExtraction } from "./dealSync";
-import type { EnvConfig } from "./env";
+import { classifyEmail } from "../classifier/classifierService";
+import type { ParsedEmail } from "../classifier/classifierModels";
+import { extractPlainText } from "./gmailParserService";
+import type { CampaignContext } from "../aiExtractor/aiExtractorModels";
+import { extractCampaignDetails } from "../aiExtractor/aiExtractorService";
+import { upsertDealFromExtraction } from "../dealSync/dealSyncService";
+import type { EnvConfig } from "../env/envModels";
+import { fetchConnectionByEmail } from "./gmailDao";
+import { ensureWatchForConnection } from "../watch/gmailWatchService";
+import { buildOAuthClient } from "../watch/credentialsService";
 import {
-  fetchConnectionByEmail,
   persistTokensIfChanged,
   updateConnection,
-} from "./supabaseConnections";
-import { buildOAuthClient, ensureWatchForConnection } from "./gmailWatch";
-import { isRateLimitError, withRetry } from "./retry";
-
-const MAX_GMAIL_RETRIES = 5;
-const BASE_RETRY_DELAY_MS = 1000;
-const MAX_HISTORY_RESULTS = 100;
+} from "../watch/credentialsService";
+import { isRateLimitError, withRetry } from "../utils/retry";
+import {
+  BASE_RETRY_DELAY_MS,
+  MAX_GMAIL_RETRIES,
+  MAX_HISTORY_RESULTS,
+} from "./gmailConstants";
+import type { GmailNotificationPayload } from "../pubsub/pubsubModels";
 
 /**
  * Detect Gmail history errors that require a watch reset.
@@ -26,13 +31,60 @@ function isHistoryNotFoundError(err: any) {
   return code === 404 || message?.includes("Requested entity was not found");
 }
 
+async function handleCampaignFromMessage(input: {
+  supabase: SupabaseClient;
+  connectionUserId: string;
+  message: { threadId?: string | null };
+  subject: string;
+  from: string;
+  snippet: string | null | undefined;
+  bodyText: string;
+}) {
+  const parsed: ParsedEmail = {
+    from: input.from,
+    subject: input.subject,
+    snippet: `${input.snippet || ""}\n\n${input.bodyText}`.trim(),
+  };
+  const classification = classifyEmail(parsed);
+  console.log("Classification:", classification);
+
+  if (!classification.isCampaign) return;
+
+  const campaignContext: CampaignContext = {
+    ...(input.message.threadId ? { threadId: input.message.threadId } : {}),
+    subject: input.subject,
+    from: input.from,
+    bodyPreview: parsed.snippet,
+  };
+
+  const extraction = await extractCampaignDetails(campaignContext);
+  console.log("OpenAI extraction:", extraction);
+
+  if (!extraction.isBrandDeal) {
+    console.log("Skipping non-brand-deal email:", extraction.brandDealReason);
+    return;
+  }
+
+  try {
+    const result = await upsertDealFromExtraction(
+      input.supabase,
+      extraction,
+      campaignContext,
+      input.connectionUserId
+    );
+    console.log(`Supabase ${result.created ? "created" : "updated"} deal`, result.id);
+  } catch (err) {
+    console.error("Failed to sync to Supabase:", err);
+  }
+}
+
 /**
  * Process a single Gmail Pub/Sub notification.
  */
 export async function processGmailNotification(
   supabase: SupabaseClient,
   env: EnvConfig,
-  payload: { emailAddress: string; historyId: string }
+  payload: GmailNotificationPayload
 ) {
   const connection = await fetchConnectionByEmail(
     supabase,
@@ -48,7 +100,7 @@ export async function processGmailNotification(
   const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
 
   const lastHistoryId = connection.history_id;
-  const startHistoryId = lastHistoryId ?? payload.historyId;
+  const startHistoryId = lastHistoryId ?? String(payload.historyId);
 
   console.log("Last historyId:", lastHistoryId);
   console.log("New historyId from push:", payload.historyId);
@@ -71,7 +123,7 @@ export async function processGmailNotification(
         const refreshed = await ensureWatchForConnection(supabase, connection, env);
         return await gmail.users.history.list({
           userId: "me",
-          startHistoryId: refreshed.history_id ?? payload.historyId,
+          startHistoryId: refreshed.history_id ?? String(payload.historyId),
           historyTypes: ["messageAdded"],
           maxResults: MAX_HISTORY_RESULTS,
         });
@@ -127,42 +179,15 @@ export async function processGmailNotification(
       console.log("Snippet:", snippet);
       console.log("-------------------\n");
 
-      const parsed: ParsedEmail = {
-        from,
+      await handleCampaignFromMessage({
+        supabase,
+        connectionUserId: connection.user_id,
+        message,
         subject,
-        snippet: `${snippet || ""}\n\n${bodyText}`.trim(),
-      };
-      const classification = classifyEmail(parsed);
-      console.log("Classification:", classification);
-
-      if (classification.isCampaign) {
-        const campaignContext: CampaignContext = {
-          ...(message.threadId ? { threadId: message.threadId } : {}),
-          subject,
-          from,
-          bodyPreview: parsed.snippet,
-        };
-
-        const extraction = await extractCampaignDetails(campaignContext);
-        console.log("OpenAI extraction:", extraction);
-
-        if (!extraction.isBrandDeal) {
-          console.log("Skipping non-brand-deal email:", extraction.brandDealReason);
-          continue;
-        }
-
-        try {
-          const result = await upsertDealFromExtraction(
-            supabase,
-            extraction,
-            campaignContext,
-            connection.user_id
-          );
-          console.log(`Supabase ${result.created ? "created" : "updated"} deal`, result.id);
-        } catch (err) {
-          console.error("Failed to sync to Supabase:", err);
-        }
-      }
+        from,
+        snippet,
+        bodyText,
+      });
     }
   }
 

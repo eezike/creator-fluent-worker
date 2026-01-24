@@ -1,50 +1,16 @@
 import OpenAI from "openai";
-import { DraftRequirement, PaymentStatus } from "./enums";
+import {
+  campaignExtractionSchema,
+  type CampaignContext,
+  type CampaignExtraction,
+} from "./aiExtractorModels";
+import {
+  BASE_RETRY_DELAY_MS,
+  MAX_OPENAI_RETRIES,
+  OPENAI_MODEL,
+} from "./aiExtractorConstants";
 
-export interface CampaignContext {
-  threadId?: string;
-  subject: string;
-  from: string;
-  bodyPreview: string;
-}
-
-export interface CampaignKeyDate {
-  name: string;
-  description: string | null;
-  startDate: string | null;
-  endDate: string | null;
-}
-
-export interface CampaignRequiredAction {
-  name: string;
-  description: string | null;
-}
-
-export interface CampaignExtraction {
-  isBrandDeal: boolean;
-  brandDealReason: string | null;
-  campaignName: string | null;
-  brand: string | null;
-  draftRequired: DraftRequirement | null;
-  draftDeadline: string | null;
-  exclusivity: string | null;
-  usageRights: string | null;
-  goLiveStart: string | null;
-  goLiveEnd: string | null;
-  payment: number | null;
-  paymentStatus: PaymentStatus | null;
-  paymentTerms: string | null;
-  invoiceSentDate: string | null;
-  expectedPaymentDate: string | null;
-  keyDates: CampaignKeyDate[];
-  requiredActions: CampaignRequiredAction[];
-  notes: string | null;
-}
-
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const openaiApiKey = process.env.OPENAI_API_KEY;
-const MAX_OPENAI_RETRIES = 5;
-const BASE_RETRY_DELAY_MS = 500;
 
 if (!openaiApiKey) {
   throw new Error("Missing OPENAI_API_KEY in environment");
@@ -52,81 +18,6 @@ if (!openaiApiKey) {
 
 const openai = new OpenAI({ apiKey: openaiApiKey });
 
-const campaignExtractionSchema = {
-  name: "campaign_extraction",
-  schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      isBrandDeal: { type: "boolean" },
-      brandDealReason: { type: ["string", "null"] },
-      campaignName: { type: ["string", "null"] },
-      brand: { type: ["string", "null"] },
-      draftRequired: {
-        type: ["string", "null"],
-        enum: [...Object.values(DraftRequirement), null],
-      },
-      draftDeadline: { type: ["string", "null"], format: "date-time" },
-      exclusivity: { type: ["string", "null"] },
-      usageRights: { type: ["string", "null"] },
-      goLiveStart: { type: ["string", "null"], format: "date-time" },
-      goLiveEnd: { type: ["string", "null"], format: "date-time" },
-      payment: { type: ["number", "null"] },
-      paymentStatus: { type: ["string", "null"], enum: [...Object.values(PaymentStatus), null] },
-      paymentTerms: { type: ["string", "null"] },
-      invoiceSentDate: { type: ["string", "null"], format: "date-time" },
-      expectedPaymentDate: { type: ["string", "null"], format: "date-time" },
-      keyDates: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            name: { type: "string" },
-            description: { type: ["string", "null"] },
-            startDate: { type: ["string", "null"], format: "date-time" },
-            endDate: { type: ["string", "null"], format: "date-time" },
-          },
-          required: ["name", "description", "startDate", "endDate"],
-        },
-      },
-      requiredActions: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            name: { type: "string" },
-            description: { type: ["string", "null"] },
-          },
-          required: ["name", "description"],
-        },
-      },
-      notes: { type: ["string", "null"] },
-    },
-    required: [
-      "isBrandDeal",
-      "brandDealReason",
-      "campaignName",
-      "brand",
-      "draftRequired",
-      "draftDeadline",
-      "exclusivity",
-      "usageRights",
-      "goLiveStart",
-      "goLiveEnd",
-      "payment",
-      "paymentStatus",
-      "paymentTerms",
-      "invoiceSentDate",
-      "expectedPaymentDate",
-      "keyDates",
-      "requiredActions",
-      "notes",
-    ],
-  },
-  strict: true,
-};
 
 /**
  * Sleep for a fixed duration.

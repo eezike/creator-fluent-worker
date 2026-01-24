@@ -1,6 +1,9 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { CampaignContext, CampaignExtraction } from "./openaiExtractor";
-import { PaymentStatus, UrgencyLevel } from "./enums";
+import type {
+  CampaignContext,
+  CampaignExtraction,
+} from "../aiExtractor/aiExtractorModels";
+import { PaymentStatus, UrgencyLevel } from "../aiExtractor/aiExtractorEnums";
 
 /**
  * Parse a readable name from the email From header.

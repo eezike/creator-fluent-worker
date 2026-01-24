@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { classifyEmail, ParsedEmail } from "./classifier";
+import { classifyEmail } from "../src/classifier/classifierService";
+import type { ParsedEmail } from "../src/classifier/classifierModels";
 
 type TestCase = {
   name: string;

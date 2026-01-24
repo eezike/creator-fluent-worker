@@ -1,0 +1,1 @@
+export const WATCH_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;

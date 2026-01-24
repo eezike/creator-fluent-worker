@@ -1,67 +1,9 @@
-export type ParsedEmail = {
-  from: string;
-  subject: string;
-  snippet: string;
-};
-
-export type Classification = {
-  isCampaign: boolean;
-  reason: string;
-};
-
-const STRONG_CAMPAIGN_KEYWORDS = [
-  "statement of work",
-  "sow",
-  "usage rights",
-  "whitelisting",
-  "creator partnership",
-  "brand deal",
-  "paid partnership",
-  "sponsorship",
-  "creative brief",
-  "campaign brief",
-  "influencer campaign",
-  "contract",
-  "agreement",
-];
-
-const CAMPAIGN_KEYWORDS = [
-  "campaign",
-  "brief",
-  "proposal",
-  "deliverables",
-  "ugc",
-  "influencer",
-  "collab",
-  "collaboration",
-  "content creator",
-  "rate",
-  "budget",
-  "fee",
-  "compensation",
-  "payment",
-  "timeline",
-  "go live",
-  "posting",
-  "deliverable",
-];
-
-const NEGATIVE_KEYWORDS = [
-  "password reset",
-  "verification code",
-  "security alert",
-  "newsletter",
-  "unsubscribe",
-  "receipt",
-  "order confirmation",
-  "shipping",
-  "tracking",
-  "login",
-  "support ticket",
-  "job application",
-  "careers",
-  "webinar",
-];
+import type { Classification, ParsedEmail } from "./classifierModels";
+import {
+  CAMPAIGN_KEYWORDS,
+  NEGATIVE_KEYWORDS,
+  STRONG_CAMPAIGN_KEYWORDS,
+} from "./classifierConstants";
 
 function matchKeywords(text: string, keywords: string[]) {
   return keywords.filter((kw) => text.includes(kw));

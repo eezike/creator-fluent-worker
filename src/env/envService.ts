@@ -1,18 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
-
-export type EnvConfig = {
-  projectId: string;
-  topicId: string;
-  subscriptionId: string;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  applicationCredentials: string;
-  supabaseUrl: string;
-  supabaseServiceRoleKey: string;
-  tokenEncryptionKey: string;
-};
+import type { EnvConfig } from "./envModels";
 
 /**
  * Load and validate required environment configuration.
@@ -59,34 +45,4 @@ export function getEnvConfig(): EnvConfig {
     supabaseServiceRoleKey,
     tokenEncryptionKey,
   };
-}
-
-/**
- * Resolve and validate the GCP credentials JSON path.
- */
-export function resolveCredentialsPath(credentialsPath: string): string {
-  const resolved = path.isAbsolute(credentialsPath)
-    ? credentialsPath
-    : path.resolve(process.cwd(), credentialsPath);
-
-  if (!fs.existsSync(resolved)) {
-    throw new Error(`GOOGLE_APPLICATION_CREDENTIALS file not found: ${resolved}`);
-  }
-
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = resolved;
-  return resolved;
-}
-
-/**
- * Log basic service account metadata for verification.
- */
-export function logCredentialInfo(credentialsPath: string) {
-  try {
-    const raw = fs.readFileSync(credentialsPath, "utf-8");
-    const parsed = JSON.parse(raw) as { client_email?: string; project_id?: string };
-    console.log("Service account:", parsed.client_email ?? "(unknown)");
-    console.log("Credentials project:", parsed.project_id ?? "(unknown)");
-  } catch (err) {
-    console.warn("Could not read credentials JSON:", err);
-  }
 }

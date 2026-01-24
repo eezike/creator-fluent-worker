@@ -1,28 +1,16 @@
 import { google } from "googleapis";
 import { SupabaseClient } from "@supabase/supabase-js";
-import type { EnvConfig } from "./env";
+import type { EnvConfig } from "../env/envModels";
+import type { GmailConnection } from "../supabase/supabaseModels";
 import {
-  GmailConnection,
-  GmailTokens,
+  fetchConnectionsForWatch,
+} from "./watchDao";
+import { WATCH_REFRESH_BUFFER_MS } from "./watchConstants";
+import {
+  buildOAuthClient,
   persistTokensIfChanged,
   updateConnection,
-  fetchConnections,
-} from "./supabaseConnections";
-
-const WATCH_REFRESH_BUFFER_MS = 24 * 60 * 60 * 1000;
-
-/**
- * Build an OAuth2 client for Gmail calls.
- */
-export function buildOAuthClient(tokens: GmailTokens, env: EnvConfig) {
-  const oAuth2Client = new google.auth.OAuth2(
-    env.clientId,
-    env.clientSecret,
-    env.redirectUri
-  );
-  oAuth2Client.setCredentials(tokens);
-  return oAuth2Client;
-}
+} from "./credentialsService";
 
 /**
  * Determine whether a Gmail watch is near expiration.
@@ -89,7 +77,10 @@ export async function ensureWatchForConnection(
  * Refresh Gmail watches for every known connection.
  */
 export async function refreshAllWatches(supabase: SupabaseClient, env: EnvConfig) {
-  const connections = await fetchConnections(supabase, env.tokenEncryptionKey);
+  const connections = await fetchConnectionsForWatch(
+    supabase,
+    env.tokenEncryptionKey
+  );
   for (const connection of connections) {
     try {
       await ensureWatchForConnection(supabase, connection, env);

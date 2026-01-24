@@ -1,9 +1,7 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
-import {
-  CampaignContext,
-  extractCampaignDetailsWithMeta,
-} from "./openaiExtractor";
+import type { CampaignContext } from "../src/aiExtractor/aiExtractorModels";
+import { extractCampaignDetailsWithMeta } from "../src/aiExtractor/aiExtractorService";
 
 type TestCase = {
   name: string;
