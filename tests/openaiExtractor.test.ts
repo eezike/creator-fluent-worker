@@ -1,6 +1,6 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
-import type { CampaignEmail } from "../src/aiExtractor/aiExtractorModels";
+import type { CampaignEmail } from "../src/gmail/gmailModels";
 import { extractCampaignDetailsWithMeta } from "../src/aiExtractor/aiExtractorService";
 
 type TestCase = {

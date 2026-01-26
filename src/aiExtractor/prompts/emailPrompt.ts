@@ -1,4 +1,4 @@
-import type { CampaignEmail } from "../aiExtractorModels";
+import type { CampaignEmail } from "../../gmail/gmailModels";
 
 /**
  * Build the prompt including schema hints and email context.
@@ -6,7 +6,6 @@ import type { CampaignEmail } from "../aiExtractorModels";
 export function buildEmailPrompt(email: CampaignEmail): string {
   const lines = [
     "Extract campaign data according to the output schema.",
-    "Remember: If classification.isBrandDeal is false, set all other scalar fields to null and arrays to [].",
     "Prefer the newest reply content; ignore outdated quoted text.",
     "",
     "<EMAIL_METADATA>",

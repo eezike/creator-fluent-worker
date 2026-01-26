@@ -3,7 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { classifyEmail } from "../classifier/classifierService";
 import type { ParsedEmail } from "../classifier/classifierModels";
 import { extractPlainText } from "./gmailParserService";
-import type { CampaignEmail } from "../aiExtractor/aiExtractorModels";
+import type { CampaignEmail } from "./gmailModels";
 import { extractCampaignDetails } from "../aiExtractor/aiExtractorService";
 import { upsertDealFromExtraction } from "../dealSync/dealSyncService";
 import type { EnvConfig } from "../env/envModels";
@@ -64,8 +64,10 @@ async function handleCampaignFromMessage(input: {
   const extraction = await extractCampaignDetails(campaignContext);
   console.log("OpenAI extraction:", extraction);
 
-  if (!extraction.isBrandDeal) {
-    console.log("Skipping non-brand-deal email:", extraction.brandDealReason);
+  // TODO: add code to serialize extraction to make sure it fits what we expects
+
+  if (!extraction.isDeal) {
+    console.log("Skipping non-brand-deal email.");
     return;
   }
 
@@ -85,6 +87,8 @@ async function handleCampaignFromMessage(input: {
 /**
  * Process a single Gmail Pub/Sub notification.
  */
+const missingConnectionEmails = new Set<string>();
+
 export async function processGmailNotification(
   supabase: SupabaseClient,
   env: EnvConfig,
@@ -96,7 +100,10 @@ export async function processGmailNotification(
     env.tokenEncryptionKey
   );
   if (!connection) {
-    console.warn(`No Gmail connection found for ${payload.emailAddress}`);
+    if (!missingConnectionEmails.has(payload.emailAddress)) {
+      missingConnectionEmails.add(payload.emailAddress);
+      console.warn(`No Gmail connection found for ${payload.emailAddress}`);
+    }
     return;
   }
 
@@ -109,6 +116,23 @@ export async function processGmailNotification(
   console.log("Last historyId:", lastHistoryId);
   console.log("New historyId from push:", payload.historyId);
   console.log("Using startHistoryId:", startHistoryId);
+
+  if (!lastHistoryId) {
+    console.log("No historyId checkpoint; setting baseline and skipping backfill.");
+    const updatedConnection = await persistTokensIfChanged(
+      supabase,
+      connection,
+      oAuth2Client.credentials,
+      env.tokenEncryptionKey
+    );
+    await updateConnection(
+      supabase,
+      updatedConnection.id,
+      { history_id: String(payload.historyId) },
+      env.tokenEncryptionKey
+    );
+    return;
+  }
 
   const historyRes = await withRetry(
     async () => {
@@ -153,20 +177,29 @@ export async function processGmailNotification(
       const messageId = msg.id;
       console.log("Fetching message:", messageId);
 
-      const msgRes = await withRetry(
-        () =>
-          gmail.users.messages.get({
-            userId: "me",
-            id: messageId,
-            format: "full",
-          }),
-        "gmail.users.messages.get",
-        {
-          maxRetries: MAX_GMAIL_RETRIES,
-          baseDelayMs: BASE_RETRY_DELAY_MS,
-          isRetryable: isRateLimitError,
+      let msgRes;
+      try {
+        msgRes = await withRetry(
+          () =>
+            gmail.users.messages.get({
+              userId: "me",
+              id: messageId,
+              format: "full",
+            }),
+          "gmail.users.messages.get",
+          {
+            maxRetries: MAX_GMAIL_RETRIES,
+            baseDelayMs: BASE_RETRY_DELAY_MS,
+            isRetryable: isRateLimitError,
+          }
+        );
+      } catch (err: any) {
+        if (err?.code === 404 || err?.status === 404) {
+          console.warn(`Message not found; skipping ${messageId}.`);
+          continue;
         }
-      );
+        throw err;
+      }
 
       const message = msgRes.data;
       const snippet = message.snippet;

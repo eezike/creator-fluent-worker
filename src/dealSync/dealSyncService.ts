@@ -1,9 +1,8 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import type {
-  CampaignEmail,
-  CampaignExtraction,
-} from "../aiExtractor/aiExtractorModels";
-import { PaymentStatus, UrgencyLevel } from "../aiExtractor/aiExtractorEnums";
+import type { CampaignExtraction } from "../aiExtractor/strategies/all_in_one/models";
+import type { CampaignEmail } from "../gmail/gmailModels";
+import { PaymentStatus, UrgencyLevel } from "./dealSyncEnums";
+
 
 /**
  * Parse a readable name from the email From header.
@@ -66,7 +65,16 @@ function computeUrgencyLevel(nextDeadline: string | null): UrgencyLevel {
  * Build a short summary based on extracted actions or notes.
  */
 function buildDeliverableSummary(extraction: CampaignExtraction) {
-  if (extraction.notes) return extraction.notes;
+  if (extraction.deliverables.length) {
+    const parts = extraction.deliverables.slice(0, 3).map((deliverable) => {
+      const quantity = deliverable.quantity ?? 1;
+      const label = formatDeliverableLabel(deliverable.platform, deliverable.type);
+      return `${quantity} ${quantity === 1 ? label : pluralizeLabel(label)}`;
+    });
+    if (parts.length) {
+      return parts.join(" • ");
+    }
+  }
   if (extraction.requiredActions?.length) {
     const names = extraction.requiredActions
       .map((action) => action.name)
@@ -77,6 +85,91 @@ function buildDeliverableSummary(extraction: CampaignExtraction) {
     }
   }
   return "Imported from email";
+}
+
+function formatDeliverableLabel(platform: string, type: string) {
+  const platformLabel = platformToLabel(platform);
+  const typeLabel = typeToLabel(type);
+
+  if (platformLabel && typeLabel) {
+    if (platformLabel === "TikTok" && typeLabel === "TikTok") {
+      return "TikTok";
+    }
+    return `${platformLabel} ${typeLabel}`;
+  }
+
+  return platformLabel ?? typeLabel ?? "Deliverable";
+}
+
+function pluralizeLabel(label: string) {
+  switch (label) {
+    case "Story":
+      return "Stories";
+    case "Blog post":
+      return "Blog posts";
+    case "Podcast episode":
+      return "Podcast episodes";
+    case "TikTok":
+      return "TikToks";
+    default:
+      return `${label}s`;
+  }
+}
+
+function platformToLabel(platform: string) {
+  switch (platform) {
+    case "INSTAGRAM":
+      return "IG";
+    case "TIKTOK":
+      return "TikTok";
+    case "YOUTUBE":
+      return "YouTube";
+    case "TWITCH":
+      return "Twitch";
+    case "X":
+      return "X";
+    case "PINTEREST":
+      return "Pinterest";
+    case "FACEBOOK":
+      return "Facebook";
+    case "BLOG":
+      return "Blog";
+    case "PODCAST":
+      return "Podcast";
+    case "OTHER":
+    default:
+      return null;
+  }
+}
+
+function typeToLabel(type: string) {
+  switch (type) {
+    case "POST":
+      return "Post";
+    case "REEL":
+      return "Reel";
+    case "STORY":
+      return "Story";
+    case "TIKTOK":
+      return "TikTok";
+    case "SHORT":
+      return "Short";
+    case "VIDEO":
+      return "Video";
+    case "LIVESTREAM":
+      return "Livestream";
+    case "CAROUSEL":
+      return "Carousel";
+    case "THREAD":
+      return "Thread";
+    case "BLOG_POST":
+      return "Blog post";
+    case "PODCAST_EPISODE":
+      return "Podcast episode";
+    case "OTHER":
+    default:
+      return null;
+  }
 }
 
 /**
@@ -99,6 +192,80 @@ function normalizeDateTime(value: string | null | undefined) {
   return new Date(parsed).toISOString();
 }
 
+export type DealUpsertPayload = {
+  user_id: string;
+  title: string;
+  brand_name: string;
+  deliverable_summary: string;
+  draft_deadline: string | null;
+  live_deadline: string | null;
+  next_deadline: string | null;
+  urgency_level: UrgencyLevel;
+  created_from: "email";
+  email_thread_id: string | null;
+  draft_required: boolean | null;
+  go_live_window: string | null;
+  exclusivity: string | null;
+  usage_rights: string | null;
+  payment_amount: number | null;
+  payment_status: PaymentStatus;
+  payment_terms: string | null;
+  invoice_sent_date: string | null;
+  expected_payment_date: string | null;
+};
+
+
+export function buildDealPayloadFromExtraction(
+  extraction: CampaignExtraction,
+  context: CampaignEmail,
+  userId: string
+): DealUpsertPayload {
+  const goLiveStart = normalizeDateTime(extraction.goLiveWindow?.startDate ?? null);
+  const goLiveEnd = normalizeDateTime(extraction.goLiveWindow?.endDate ?? null);
+  const liveDeadline = goLiveEnd ?? null;
+  const invoiceSentDate = normalizeDateTime(
+    extraction.payment?.invoiceSentAt ?? null
+  );
+  const expectedPaymentDate = normalizeDateTime(
+    extraction.payment?.invoiceExpectedAt ?? null
+  );
+  const keyDateCandidates = extraction.keyDates.flatMap((date) => [
+    normalizeDateTime(date.startDate),
+    normalizeDateTime(date.endDate),
+  ]);
+  const nextDeadline = pickNextDeadline([
+    goLiveStart,
+    liveDeadline,
+    expectedPaymentDate,
+    ...keyDateCandidates,
+  ]);
+  const urgency = computeUrgencyLevel(nextDeadline);
+
+  const payload: DealUpsertPayload = {
+    user_id: userId,
+    title: extraction.campaignName?.value ?? context.subject ?? "New campaign",
+    brand_name: extraction.brandName?.value ?? parseDisplayName(context.from) ?? "Unknown",
+    deliverable_summary: buildDeliverableSummary(extraction),
+    draft_deadline: null,
+    live_deadline: liveDeadline,
+    next_deadline: nextDeadline,
+    urgency_level: urgency,
+    created_from: "email",
+    email_thread_id: context.threadId ?? null,
+    draft_required: extraction.draftRequired?.value ?? null,
+    go_live_window: buildGoLiveWindow(goLiveStart, goLiveEnd),
+    exclusivity: extraction.exclusivityRightsSummary?.value ?? null,
+    usage_rights: extraction.usageRightsSummary?.value ?? null,
+    payment_amount: extraction.payment?.amount ?? null,
+    payment_status: normalizePaymentStatus(extraction.payment?.paymentStatus),
+    payment_terms: extraction.payment?.paymentTerms ?? null,
+    invoice_sent_date: invoiceSentDate,
+    expected_payment_date: expectedPaymentDate,
+  };
+
+  return payload;
+}
+
 /**
  * Upsert a deal record based on the extraction payload.
  */
@@ -108,36 +275,7 @@ export async function upsertDealFromExtraction(
   context: CampaignEmail,
   userId: string
 ) {
-  const draftDeadline = normalizeDateTime(extraction.draftDeadline);
-  const goLiveStart = normalizeDateTime(extraction.goLiveStart);
-  const goLiveEnd = normalizeDateTime(extraction.goLiveEnd);
-  const liveDeadline = goLiveEnd ?? null;
-  const nextDeadline = pickNextDeadline([draftDeadline, goLiveStart, liveDeadline]);
-  const urgency = computeUrgencyLevel(nextDeadline);
-  const invoiceSentDate = normalizeDateTime(extraction.invoiceSentDate);
-  const expectedPaymentDate = normalizeDateTime(extraction.expectedPaymentDate);
-
-  const payload = {
-    user_id: userId,
-    title: extraction.campaignName ?? context.subject ?? "New campaign",
-    brand_name: extraction.brand ?? parseDisplayName(context.from) ?? "Unknown",
-    deliverable_summary: buildDeliverableSummary(extraction),
-    draft_deadline: draftDeadline,
-    live_deadline: liveDeadline,
-    next_deadline: nextDeadline,
-    urgency_level: urgency,
-    created_from: "email",
-    email_thread_id: context.threadId ?? null,
-    draft_required: extraction.draftRequired,
-    go_live_window: buildGoLiveWindow(goLiveStart, goLiveEnd),
-    exclusivity: extraction.exclusivity,
-    usage_rights: extraction.usageRights,
-    payment_amount: extraction.payment,
-    payment_status: normalizePaymentStatus(extraction.paymentStatus),
-    payment_terms: extraction.paymentTerms,
-    invoice_sent_date: invoiceSentDate,
-    expected_payment_date: expectedPaymentDate,
-  };
+  const payload = buildDealPayloadFromExtraction(extraction, context, userId);
 
   if (context.threadId) {
     const { data: existing, error: existingError } = await supabase

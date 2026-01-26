@@ -1,7 +1,8 @@
 import "dotenv/config";
 import readline from "node:readline";
 import { extractCampaignDetailsWithMeta } from "../src/aiExtractor/aiExtractorService";
-import type { CampaignEmail } from "../src/aiExtractor/aiExtractorModels";
+import { buildDealPayloadFromExtraction } from "../src/dealSync/dealSyncService";
+import type { CampaignEmail } from "../src/gmail/gmailModels";
 
 const contexts: CampaignEmail[] = [
   {
@@ -108,8 +109,19 @@ async function run() {
       console.log(`Subject: ${context.subject}`);
       console.log(`From: ${context.from}`);
       console.log(`Body: ${context.body}`);
+      console.log(`Received at: ${context.receivedAt}`);
       const result = await extractCampaignDetailsWithMeta(context);
       console.log(JSON.stringify(result, null, 2));
+      if (result.extraction.isDeal) {
+        try {
+          buildDealPayloadFromExtraction(result.extraction, context, "debug-user");
+          console.log("Supabase payload parse check: ok (not uploaded)");
+        } catch (err) {
+          console.error("Supabase payload parse check failed:", err);
+        }
+      } else {
+        console.log("Supabase payload parse check: skipped (not a deal)");
+      }
     }
   } finally {
     rl.close();
